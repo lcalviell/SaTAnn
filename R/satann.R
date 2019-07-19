@@ -320,7 +320,7 @@ calc_orf_pval<-function(ORFs,P_sites_rle,P_sites_uniq_rle,P_sites_uniq_mm_rle,cu
     ORFs$pct_uniq<-NA
     ORFs$pct_uniq_notmm<-NA
     ORFs$pct_fr<-NA
-    ORFs$TrP_raw<-NA
+    
     
     for(i in 1:length(ORFs)){
         psit<-as.vector(P_sites_rle[ORFs[i]@ranges])
@@ -346,7 +346,6 @@ calc_orf_pval<-function(ORFs,P_sites_rle,P_sites_uniq_rle,P_sites_uniq_mm_rle,cu
                 if(length(psit)>=25){slepians<-dpss(n=length(psit),k=tapers,nw=bw)}
                 vals<-take_Fvals_spect(x = psit,n_tapers = tapers,time_bw = bw,slepians_values = slepians)
                 ORFs$pval[i]<-pf(q=vals[1],df1=2,df2=(2*24)-2,lower.tail=F)
-                ORFs$TrP_raw[i]<-vals[2]
                 vals<-take_Fvals_spect(x = psit_uniq,n_tapers = tapers,time_bw = bw,slepians_values = slepians)
                 ORFs$pval_uniq[i]<-pf(q=vals[1],df1=2,df2=(2*24)-2,lower.tail=F)
                 
@@ -389,7 +388,6 @@ calc_orf_pval<-function(ORFs,P_sites_rle,P_sites_uniq_rle,P_sites_uniq_mm_rle,cu
 #' \code{pval_uniq}: P-value for the multitaper F-test at 1/3 using the ORF P_sites profile (only uniquely mapping reads)
 #' \code{P_sites_raw}: Raw number of P_sites mapping to the ORF
 #' \code{pct_uniq}: Percentage of raw number of P_sites mapping to the ORF
-#' \code{TrP_raw}: Raw multitaper spectral coefficient at 1/3 using the P_sites ORF signal
 #' \code{ORF_id_tr}: ORF id containing <tx_id>_<start>_<end>
 #' \code{Protein}: AAString sequence of the translated protein
 #' \code{region}: Genomic coordinates of the analyzed region
@@ -643,8 +641,7 @@ select_txs<-function(region,annotation,P_sites,P_sites_uniq,junction_counts){
     d<-genbin$reads
     
     hts<-findOverlaps(genbin,P_sites,ignore.strand=F)
-    hts<-cbind(queryHits(hts),P_sites[subjectHits(hts)]$score)
-    
+    hts<-cbind(queryHits(hts),P_sites[subjectHits(hts)]$score*width(P_sites[subjectHits(hts)]))
     if(length(hts)>0){
         hts<-aggregate(x = hts[,2],list(hts[,1]),FUN=sum)
         for(i in 1:dim(hts)[1]){
@@ -653,9 +650,9 @@ select_txs<-function(region,annotation,P_sites,P_sites_uniq,junction_counts){
         genbin$reads<-d
         
     }
-    
+    d<-genbin$unique_reads
     hts<-findOverlaps(genbin,P_sites_uniq,ignore.strand=F)
-    hts<-cbind(queryHits(hts),P_sites_uniq[subjectHits(hts)]$score)
+    hts<-cbind(queryHits(hts),P_sites_uniq[subjectHits(hts)]$score*width(P_sites_uniq[subjectHits(hts)]))
     #IMPORTANT, HERE THERE WAS A IF NO UNIQ RETURN GRANGESLIST()
     if(length(hts)>0){
         hts<-aggregate(x = hts[,2],list(hts[,1]),FUN=sum)
@@ -1089,9 +1086,6 @@ detect_readthrough<-function(results_orf,P_sites,P_sites_uniq,P_sites_uniq_mm,ge
 #' Percentage of total gene translation and length-adjusted quantification estimates are produced.
 #' More details about the quantificatin procedure can be found in the SaTAnn manuscript.\cr\cr
 #' Additional columns are added to the ORFs_tx object:\cr
-#' \code{TrP}: TrP_raw values (spectral coefficient) from \code{detect_translated_ORFs} divided by the ORF scaling value.\cr
-#' \code{ORF_pct_TrP}:  Percentage of gene translation output for the ORF, derived using TrP values.\cr
-#' \code{ORF_pct_TrP_pN}: Percentage of gene translation ouptut (adjusted by length) for the ORF, derived using TrP values.\cr
 #' \code{P_sites}: P_sites_raw value from \code{detect_translated_ORFs} divided by the ORF scaling value.\cr
 #' \code{ORF_pct_P_sites}: Percentage of gene translation output for the ORF, derived using P_sites values.\cr
 #' \code{ORF_pct_P_sites_pN}: Percentage of gene translation ouptut (adjusted by length) for the ORF, derived using P_sites values.\cr
@@ -1141,7 +1135,7 @@ select_quantify_ORFs<-function(results_ORFs,P_sites,P_sites_uniq,cutoff_cums=NA,
     df_genes<-data.frame(tx_name=as.character(names(orfs)),gene_id="OFF")
     orfann<-suppressWarnings(makeTxDb(transcripts=df_orfs,splicings=df_orfs_ex,genes=df_genes))
     #disjointExons(orfann)
-    #gene_feat<-convertToSGFeatures(convertToTxFeatures(orfann),coerce=T)
+    
     
     exbin<-disjointExons(orfann)
     
@@ -1149,7 +1143,7 @@ select_quantify_ORFs<-function(results_ORFs,P_sites,P_sites_uniq,cutoff_cums=NA,
     d<-rep(0,length(exbin))
     
     hts<-findOverlaps(exbin,P_sites,ignore.strand=F)
-    hts<-cbind(queryHits(hts),P_sites[subjectHits(hts)]$score)
+    hts<-cbind(queryHits(hts),P_sites[subjectHits(hts)]$score*width(P_sites[subjectHits(hts)]))
     if(length(hts)==0){
         return(GRangesList())
         
@@ -1162,8 +1156,7 @@ select_quantify_ORFs<-function(results_ORFs,P_sites,P_sites_uniq,cutoff_cums=NA,
     d2<-rep(0,length(exbin))
     
     hts<-findOverlaps(exbin,P_sites_uniq,ignore.strand=F)
-    hts<-cbind(queryHits(hts),P_sites_uniq[subjectHits(hts)]$score)
-    
+    hts<-cbind(queryHits(hts),P_sites_uniq[subjectHits(hts)]$score*width(P_sites_uniq[subjectHits(hts)]))
     if(length(hts)>0){
         hts<-aggregate(x = hts[,2],list(hts[,1]),FUN=sum)
         for(i in 1:dim(hts)[1]){
@@ -1417,7 +1410,7 @@ select_quantify_ORFs<-function(results_ORFs,P_sites,P_sites_uniq,cutoff_cums=NA,
     orfs_tx<-results_ORFs$ORFs_tx_position
     orfs_tx<-lapply(orfs_tx,function(x){
         cols<-mcols(x)
-        cols[,c("TrP","ORF_pct_TrP","ORF_pct_TrP_pN","P_sites","ORF_pct_P_sites","ORF_pct_P_sites_pN")]<-NA
+        cols[,c("P_sites","ORF_pct_P_sites","ORF_pct_P_sites_pN")]<-NA
         cols[,"unique_features_reads"]<-NumericList("")
         cols[,"adj_unique_features_reads"]<-NumericList("")
         cols[,"scaling_factors"]<-NumericList("")
@@ -1429,10 +1422,11 @@ select_quantify_ORFs<-function(results_ORFs,P_sites,P_sites_uniq,cutoff_cums=NA,
     
     orf_del<-c("")
     counter<-1
+    gene_feat$ORF_id_tr_selected_quant<- gene_feat$ORF_id_tr_selected
+    gene_feat$use_ORF_selected_quant<-gene_feat$use_ORF_selected
+    
     while(length(orf_del)>0){
         
-        gene_feat$ORF_id_tr_selected_quant<- gene_feat$ORF_id_tr_selected
-        gene_feat$use_ORF_selected_quant<-gene_feat$use_ORF_selected
         feats<-feats[!names(feats)%in%orf_del]
         nms<-sapply(feats,length)
         nms<-rep(names(nms),nms)
@@ -1443,7 +1437,7 @@ select_quantify_ORFs<-function(results_ORFs,P_sites,P_sites_uniq,cutoff_cums=NA,
             unique(x[!x%in%orf_del])
         }))
         
-        gene_feat$ORF_id_tr_selected_quant<-CharacterList(lapply(gene_feat$ORF_id_tr_selected,function(x){
+        gene_feat$ORF_id_tr_selected_quant<-CharacterList(lapply(gene_feat$ORF_id_tr_selected_quant,function(x){
             unique(x[!x%in%orf_del])
         }))
         lens<-sapply(feats$ORF_id_tr_selected,length)
@@ -1658,9 +1652,9 @@ select_quantify_ORFs<-function(results_ORFs,P_sites,P_sites_uniq,cutoff_cums=NA,
         
         #added apr 6
         if(sum(unqs_adj>0)==0){
-              nmmm<-names(unqs_adj)
-              unqs_adj<-rep(1/length(nmmm),length(nmmm))
-              names(unqs_adj)<-nmmm
+            nmmm<-names(unqs_adj)
+            unqs_adj<-rep(1/length(nmmm),length(nmmm))
+            names(unqs_adj)<-nmmm
         }
         
         orftxs<-unlist(results_ORFs[["ORFs_tx_position"]])
@@ -1737,13 +1731,12 @@ select_quantify_ORFs<-function(results_ORFs,P_sites,P_sites_uniq,cutoff_cums=NA,
         for(i in names(feats)){
             feat<-feats[[i]]
             orf_tx<-orfs_tx[[i]]
-            trpk<-orf_tx$TrP_raw
+            
             ps<-orf_tx$P_sites_raw
             unq_rat<-unqs_optim[i]
-            trpk_norm<-trpk*unq_rat
+            
             ps_norm<-ps*unq_rat
             
-            orfs_tx[[i]]$TrP<-trpk_norm
             orfs_tx[[i]]$P_sites<-ps_norm
             scalss<-c(unqs[i],unqs_adj[i],unqs_optim[i])
             names(scalss)<-c("unq_feats","adj_feats","optim_feats")
@@ -1755,19 +1748,6 @@ select_quantify_ORFs<-function(results_ORFs,P_sites,P_sites_uniq,cutoff_cums=NA,
         genes_unq<-unique(genes)
         orfs_genes<-split(unlist(GRangesList(orfs_tx)),f=unlist(GRangesList(orfs_tx))$gene_id)
         orfs_genes<-GRangesList(lapply(orfs_genes,FUN=function(x){
-            xnot<-x[is.na(x$TrP)]
-            x<-x[!is.na(x$TrP)]
-            x$ORF_pct_TrP<-x$TrP*100/sum(x$TrP)
-            #added this when genes, mostly overlapping ones, get no reads
-            if(sum(x$TrP)==0){x$ORF_pct_TrP<-0}
-            
-            x$ORF_pct_TrP_pN<-(x$TrP/width(x))*100/sum(x$TrP/width(x))
-            #added this when genes, mostly overlapping ones, get no reads
-            if(sum(x$TrP)==0){x$ORF_pct_TrP<-0;x$ORF_pct_TrP_pN<-0}
-            
-            
-            x<-c(x[order(x$ORF_pct_TrP,decreasing=T)],xnot)
-            
             xnot<-x[is.na(x$P_sites)]
             x<-x[!is.na(x$P_sites)]
             x$ORF_pct_P_sites<-x$P_sites*100/sum(x$P_sites)
@@ -1822,11 +1802,17 @@ select_quantify_ORFs<-function(results_ORFs,P_sites,P_sites_uniq,cutoff_cums=NA,
         
         orf_del<-unique(c(orf_del_cums,orf_del_iso,orf_del_ps))
         
+        gene_feat$ORF_id_tr_selected_quant<-CharacterList(lapply(gene_feat$ORF_id_tr_selected_quant,function(x){
+            unique(x[!x%in%orf_del])
+        }))
+        lens2<-sapply(gene_feat$ORF_id_tr_selected_quant,length)
+        gene_feat$use_ORF_selected_quant<-"shared"
+        gene_feat$use_ORF_selected_quant[lens2==1]<-"unique"
+        gene_feat$use_ORF_selected_quant[lens2==0]<-"absent"
+        
         fs<-unlist(orfs_genes)
         #put isovalues
         for(g in names(orfs_tx)){
-            orfs_tx[[g]]$ORF_pct_TrP<-fs$ORF_pct_TrP[fs$ORF_id_tr==g]
-            orfs_tx[[g]]$ORF_pct_TrP_pN<-fs$ORF_pct_TrP_pN[fs$ORF_id_tr==g]
             orfs_tx[[g]]$ORF_pct_P_sites<-fs$ORF_pct_P_sites[fs$ORF_id_tr==g]
             orfs_tx[[g]]$ORF_pct_P_sites_pN<-fs$ORF_pct_P_sites_pN[fs$ORF_id_tr==g]
         }
@@ -1838,10 +1824,7 @@ select_quantify_ORFs<-function(results_ORFs,P_sites,P_sites_uniq,cutoff_cums=NA,
     results_ORFs$ORFs_features<-results_ORFs$ORFs_features[names(results_ORFs$ORFs_tx_position)]
     results_ORFs$tx_annotated_ORFs<-results_ORFs$tx_annotated_ORFs[names(results_ORFs$ORFs_tx_position)]
     #adjust feats!
-    new_feats<-feats
-    if(is(new_feats,"GRangesList")){
-        new_feats<-as.list(new_feats)
-    }
+    
     results_ORFs$selected_ORFs_features<-gene_feat
     return(results_ORFs)
     
@@ -2837,12 +2820,7 @@ SaTAnn<-function(region,for_SaTAnn,genetic_code_region,
 #' \code{Protein_sequences.fasta}: (Optional) Fasta file containing the set of translated proteins .\cr
 #' \code{Detected_ORFs.gtf}: GTF file containing coordinates of the detected ORFs.\cr\cr
 #' In addition, new columns are added in the ORFs_tx file:\cr\cr
-#' \code{TrP_pM}: (Beta) multitaper spectral coefficient of the P_sites track for each ORF, summing up to a million.\cr
-#' \code{TrP_pN}: (Beta) multitaper spectral coefficient of the P_sites track for each ORF, divided by ORF length.\cr
-#' \code{TrP_pNpM}: (Beta) multitaper spectral coefficient of the P_sites track for each ORF, divided by ORF length and summing up to a million (akin to TPM).\cr
-#' \code{P_sites_pM}: number of P_sites for each ORF, summing up to a million.\cr
-#' \code{P_sites_pN}: number of P_sites for each ORF, divided by ORF length.\cr
-#' \code{P_sites_pNpM}: number of P_sites for each ORF, divided by ORF length and summing up to a million (akin to TPM).\cr
+#' \code{ORFs_pM}: number of P_sites for each ORF, divided by ORF length and summing up to a million (akin to TPM).\cr
 #' @seealso \code{\link{prepare_annotation_files}}, \code{\link{load_annotation}}, \code{\link{SaTAnn}}
 #' @export
 
@@ -2955,20 +2933,12 @@ run_SaTAnn<-function(for_SaTAnn_file,annotation_file,n_cores,prefix=for_SaTAnn_f
     ORFs_found<-ORFs_found[lens>1]
     ORFs_tx<-unlist(GRangesList(unlist(sapply(ORFs_found,function(x){unlist(x$ORFs_tx_position)}))))
     
-    ORFs_tx$TrP_pM<-NA
-    na_trp<-is.na(ORFs_tx$TrP)
-    ORFs_tx$TrP_pM[!na_trp]<-ORFs_tx$TrP[!na_trp]*(1000000/(sum(ORFs_tx$TrP[!na_trp])))
-    ORFs_tx$TrP_pN<-NA
-    ORFs_tx$TrP_pN[!na_trp]<-ORFs_tx$TrP[!na_trp]/(width(ORFs_tx)[!na_trp])
-    ORFs_tx$TrP_pNpM<-NA
-    ORFs_tx$TrP_pNpM[!na_trp]<-ORFs_tx$TrP_pN[!na_trp]*(1000000/(sum(ORFs_tx$TrP_pN[!na_trp])))
-    ORFs_tx$P_sites_pM<-NA
     na_ps<-is.na(ORFs_tx$P_sites)
-    ORFs_tx$P_sites_pM[!na_ps]<-ORFs_tx$P_sites[!na_ps]*(1000000/(sum(ORFs_tx$P_sites[!na_ps])))
     ORFs_tx$P_sites_pN<-NA
     ORFs_tx$P_sites_pN[!na_ps]<-ORFs_tx$P_sites[!na_ps]/(width(ORFs_tx)[!na_ps])
-    ORFs_tx$P_sites_pNpM<-NA
-    ORFs_tx$P_sites_pNpM[!na_ps]<-ORFs_tx$P_sites_pN[!na_ps]*(1000000/(sum(ORFs_tx$P_sites_pN[!na_ps])))
+    ORFs_tx$ORFs_pM<-NA
+    ORFs_tx$ORFs_pM[!na_ps]<-ORFs_tx$P_sites_pN[!na_ps]*(1000000/(sum(ORFs_tx$P_sites_pN[!na_ps])))
+    ORFs_tx$P_sites_pN<-NULL
     
     
     ORFs_gen<-unlist(GRangesList(sapply(ORFs_found,function(x){unlist(x$ORFs_genomic_position)})))
@@ -2991,7 +2961,7 @@ run_SaTAnn<-function(for_SaTAnn_file,annotation_file,n_cores,prefix=for_SaTAnn_f
     save(SaTAnn_results ,file = paste(prefix,"final_SaTAnn_results",sep="_"))
     
     if(write_GTF_file){
-        map_tx_genes<-mcols(ORFs_tx)[,c("ORF_id_tr","gene_id","gene_biotype","gene_name","transcript_id","transcript_biotype","TrP","ORF_pct_TrP","ORF_pct_TrP_pN","TrP_pNpM","P_sites","ORF_pct_P_sites","ORF_pct_P_sites_pN","P_sites_pNpM")]
+        map_tx_genes<-mcols(ORFs_tx)[,c("ORF_id_tr","gene_id","gene_biotype","gene_name","transcript_id","transcript_biotype","P_sites","ORF_pct_P_sites","ORF_pct_P_sites_pN","ORFs_pM")]
         
         match_ORF<-match(names(ORFs_gen),map_tx_genes$ORF_id_tr)
         
@@ -3005,15 +2975,10 @@ run_SaTAnn<-function(for_SaTAnn_file,annotation_file,n_cores,prefix=for_SaTAnn_f
         ORFs_gen$gene_name<-map_tx_genes[match_tx,"gene_name"]
         ORFs_gen$ORF_id<-map_tx_genes[match_tx,"ORF_id_tr"]
         
-        ORFs_gen$TrP<-round(map_tx_genes[match_ORF,"TrP"],digits=4)
-        ORFs_gen$ORF_pct_TrP<-round(map_tx_genes[match_ORF,"ORF_pct_TrP"],digits=4)
-        ORFs_gen$ORF_pct_TrP_pN<-round(map_tx_genes[match_ORF,"ORF_pct_TrP_pN"],digits=4)
-        ORFs_gen$TrP_pNpM<-round(map_tx_genes[match_ORF,"TrP_pNpM"],digits=4)
-        
         ORFs_gen$P_sites<-round(map_tx_genes[match_ORF,"P_sites"],digits=4)
         ORFs_gen$ORF_pct_P_sites<-round(map_tx_genes[match_ORF,"ORF_pct_P_sites"],digits=4)
         ORFs_gen$ORF_pct_P_sites_pN<-round(map_tx_genes[match_ORF,"ORF_pct_P_sites_pN"],digits=4)
-        ORFs_gen$P_sites_pNpM<-round(map_tx_genes[match_ORF,"P_sites_pNpM"],digits=4)
+        ORFs_gen$ORFs_pM<-round(map_tx_genes[match_ORF,"ORFs_pM"],digits=4)
         
         proteins_readthrough<-AAStringSet(ORFs_readthroughs$Protein)
         if(length(proteins_readthrough)>0){
@@ -4059,10 +4024,7 @@ prepare_for_SaTAnn<-function(annotation_file,bam_file,path_to_rl_cutoff_file=NA,
                             ps_spl<-get_ps_fromspliceplus(multi,cutoff=ct)
                             
                         }
-                        mcols(ps_unspl)<-NULL
-                        mcols(firstok)<-NULL
-                        mcols(lastok)<-NULL
-                        mcols(ps_spl)<-NULL
+                        mcols(ps_spl)<-mcols(multi)
                         
                         seqlevels(firstok)<-seqllll
                         seqlevels(lastok)<-seqllll
@@ -4074,10 +4036,14 @@ prepare_for_SaTAnn<-function(annotation_file,bam_file,path_to_rl_cutoff_file=NA,
                         seqlengths(ps_unspl)<-seqleee
                         seqlengths(ps_spl)<-seqleee
                         
-                        ps_plus<-c(ps_unspl,firstok,lastok,ps_spl)
                         
-                        ps_plus_uniq<-ps_plus[mcols(ok_reads)$mapq>50]
-                        ps_plus_uniq_mm<-ps_plus[mcols(ok_reads)$mapq>50 & nchar(mcols(ok_reads)$MD)>3]
+                        ps_plus<-c(ps_unspl,firstok,lastok,ps_spl)
+                        ps_plus_uniq<-ps_plus[mcols(ps_plus)$mapq>50]
+                        ps_plus_uniq_mm<-ps_plus[mcols(ps_plus)$mapq>50 & nchar(mcols(ps_plus)$MD)>3]
+                        
+                        mcols(ps_plus)<-NULL
+                        mcols(ps_plus_uniq)<-NULL
+                        mcols(ps_plus_uniq_mm)<-NULL
                         
                     }
                     ok_reads<-neg[mcols(neg)$len_adj%in%rl]
@@ -4115,10 +4081,7 @@ prepare_for_SaTAnn<-function(annotation_file,bam_file,path_to_rl_cutoff_file=NA,
                         if(length(multi)>0){
                             ps_spl<-get_ps_fromsplicemin(multi,cutoff=ct)
                         }
-                        mcols(ps_unspl)<-NULL
-                        mcols(firstok)<-NULL
-                        mcols(lastok)<-NULL
-                        mcols(ps_spl)<-NULL
+                        mcols(ps_spl)<-mcols(multi)
                         
                         seqlevels(firstok)<-seqllll
                         seqlevels(lastok)<-seqllll
@@ -4131,10 +4094,12 @@ prepare_for_SaTAnn<-function(annotation_file,bam_file,path_to_rl_cutoff_file=NA,
                         seqlengths(ps_spl)<-seqleee
                         
                         ps_neg<-c(ps_unspl,firstok,lastok,ps_spl)
-                        ps_neg_uniq<-ps_neg[mcols(ok_reads)$mapq>50]
+                        ps_neg_uniq<-ps_neg[mcols(ps_neg)$mapq>50]
+                        ps_neg_uniq_mm<-ps_neg[mcols(ps_neg)$mapq>50 & nchar(mcols(ps_neg)$MD)>3]
                         
-                        ps_neg_uniq_mm<-ps_neg[mcols(ok_reads)$mapq>50 & nchar(mcols(ok_reads)$MD)>3]
-                        
+                        mcols(ps_neg)<-NULL
+                        mcols(ps_neg_uniq)<-NULL
+                        mcols(ps_neg_uniq_mm)<-NULL
                     }
                     
                     all_ps<-sort(c(ps_plus,ps_neg))
@@ -4347,7 +4312,7 @@ prepare_for_SaTAnn<-function(annotation_file,bam_file,path_to_rl_cutoff_file=NA,
 #' The plots created are as follows:\cr\cr
 #' \code{ORFs_found}: Number of ORF categories detected per gene biotype.\cr
 #' \code{ORFs_found_pct_tr}: Distribution of ORF_pct_P_sites (% of gene translation) for different ORF categories and gene biotypes.\cr
-#' \code{ORFs_found_P_sites_pNpM}: Distribution of ORF_P_sites_pNpM (P-sites per nucleotide per Million, similar to TPM) for different ORF categories and gene biotypes.\cr
+#' \code{ORFs_found_ORFs_pM}: Distribution of ORF_ORFs_pM (P-sites per nucleotide per Million, similar to TPM) for different ORF categories and gene biotypes.\cr
 #' \code{ORFs_found_len}: Distribution of ORF length for different ORF categories and gene biotypes.\cr
 #' \code{ORFs_genes}: Number of detected ORFs per gene.\cr
 #' \code{ORFs_genes_tpm}: Gene level TPM values, plotted by number of ORFs detected.\cr
@@ -4437,7 +4402,7 @@ plot_SaTAnn_results<-function(for_SaTAnn_file,SaTAnn_output_file,annotation_file
     dfiso$cat_tx<-factor(dfiso$cat_tx,levels=levvs)
     dfiso$cat_biot<-factor(dfiso$cat_biot,levels=c("protein_coding","non-coding isoform","pseudogene","non-coding RNA"))
     
-    dfpnpm<-data.frame(cat_tx,cat_biot,ORFs_tx$P_sites_pNpM)
+    dfpnpm<-data.frame(cat_tx,cat_biot,ORFs_tx$ORFs_pM)
     #dfpnpm$value[dfpnpm$value==0]<-NA
     dfpnpm$cat_tx<-factor(dfpnpm$cat_tx,levels=levvs)
     dfpnpm$cat_biot<-factor(dfpnpm$cat_biot,levels=c("protein_coding","non-coding isoform","pseudogene","non-coding RNA"))
@@ -4481,11 +4446,11 @@ plot_SaTAnn_results<-function(for_SaTAnn_file,SaTAnn_output_file,annotation_file
     list_SaTAnn_plots[["ORFs_found_pct_tr"]][["pars"]]<-c(14,4)
     
     
-    c<-ggplot(dfpnpm,aes(x=cat_biot,y=ORFs_tx.P_sites_pNpM+1,fill=cat_biot))
+    c<-ggplot(dfpnpm,aes(x=cat_biot,y=ORFs_tx.ORFs_pM+1,fill=cat_biot))
     c<-c + geom_boxplot()
-    #c<-c + geom_jitter(aes(x=cat_tx,y=ORFs_tx.P_sites_pNpM),position = position_jitterdodge(jitter.width = .5), alpha = 0.2)
-    c<-c + scale_y_log10(breaks=c(1,11,101,1001),limits=c(1,max(dfpnpm$ORFs_tx.P_sites_pNpM)*1.1),labels=c(1,11,101,1001)-1)
-    #c<-c + geom_text(aes(x=cat_tx, y=ORFs_tx.P_sites_pNpM, hjust="top",label=ORFs_tx.P_sites_pNpM),colour="black",position = position_dodge(width = 1),size=5)
+    #c<-c + geom_jitter(aes(x=cat_tx,y=ORFs_tx.ORFs_pM),position = position_jitterdodge(jitter.width = .5), alpha = 0.2)
+    c<-c + scale_y_log10(breaks=c(1,11,101,1001),limits=c(1,max(dfpnpm$ORFs_tx.ORFs_pM)*1.1),labels=c(1,11,101,1001)-1)
+    #c<-c + geom_text(aes(x=cat_tx, y=ORFs_tx.ORFs_pM, hjust="top",label=ORFs_tx.ORFs_pM),colour="black",position = position_dodge(width = 1),size=5)
     c<-c + facet_grid(. ~ cat_tx ,drop = T,scales = "free_x")
     c<-c + theme_bw()
     c<-c + xlab("")
@@ -4498,14 +4463,14 @@ plot_SaTAnn_results<-function(for_SaTAnn_file,SaTAnn_output_file,annotation_file
     c<-c + theme(strip.text.x = element_text(size=16, face="bold"),strip.text.y = element_text(size=20),strip.background = element_rect(colour="black", fill=c("darkkhaki")))
     orfs_found_pspn<-c + theme(strip.text.x = element_text(size=14, face="bold"),strip.text.y = element_text(size=9),strip.background = element_rect(colour="black", fill=c(rep("darkkhaki",8),rep("red",8))))
     
-    list_SaTAnn_plots[["ORFs_found_P_sites_pNpM"]]<-orfs_found_pspn
-    list_SaTAnn_plots[["ORFs_found_P_sites_pNpM"]][["pars"]]<-c(14,4)
+    list_SaTAnn_plots[["ORFs_found_ORFs_pM"]]<-orfs_found_pspn
+    list_SaTAnn_plots[["ORFs_found_ORFs_pM"]][["pars"]]<-c(14,4)
     
     d<-ggplot(dfwid,aes(x=cat_biot,y=width.ORFs_tx.,fill=cat_biot))
     d<-d + geom_boxplot()
-    #c<-c + geom_jitter(aes(x=cat_tx,y=ORFs_tx.P_sites_pNpM),position = position_jitterdodge(jitter.width = .5), alpha = 0.2)
+    #c<-c + geom_jitter(aes(x=cat_tx,y=ORFs_tx.ORFs_pM),position = position_jitterdodge(jitter.width = .5), alpha = 0.2)
     d<-d + scale_y_log10(breaks=c(10,100,1000,10000),labels=c(10,100,1000,10000),limits=c(min(dfwid$width.ORFs_tx.),max(dfwid$width.ORFs_tx.)*1.1))
-    #c<-c + geom_text(aes(x=cat_tx, y=ORFs_tx.P_sites_pNpM, hjust="top",label=ORFs_tx.P_sites_pNpM),colour="black",position = position_dodge(width = 1),size=5)
+    #c<-c + geom_text(aes(x=cat_tx, y=ORFs_tx.ORFs_pM, hjust="top",label=ORFs_tx.ORFs_pM),colour="black",position = position_dodge(width = 1),size=5)
     d<-d + theme_bw()
     d<-d + facet_grid(. ~ cat_tx ,drop = T,scales = "free_x")
     d<-d + xlab("")
