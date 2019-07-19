@@ -317,8 +317,8 @@ calc_orf_pval<-function(ORFs,P_sites_rle,P_sites_uniq_rle,P_sites_uniq_mm_rle,cu
     ORFs$pval<-NA
     ORFs$pval_uniq<-NA
     ORFs$P_sites_raw<-NA
-    ORFs$pct_uniq<-NA
-    ORFs$pct_uniq_notmm<-NA
+    ORFs$P_sites_raw_uniq<-NA
+    ORFs$P_sites_raw_uniq_notmm<-NA
     ORFs$pct_fr<-NA
     
     
@@ -329,15 +329,15 @@ calc_orf_pval<-function(ORFs,P_sites_rle,P_sites_uniq_rle,P_sites_uniq_mm_rle,cu
         ORFs$P_sites_raw[i]<-sum(psit)
         ps_unq<-round(sum(psit_uniq)/sum(psit)*100,digits = 2)
         if(is.na(ps_unq)){ps_unq<-0}
-        ORFs$pct_uniq[i]<-ps_unq
+        ORFs$P_sites_raw_uniq[i]<-sum(psit_uniq)
         
         ps_unq<-round((sum(psit_uniq)-sum(psit_uniq_mm))/sum(psit)*100,digits = 2)
         if(is.na(ps_unq)){ps_unq<-0}
         
-        ORFs$pct_uniq_notmm[i]<-ps_unq
+        ORFs$P_sites_raw_uniq_notmm[i]<-sum(psit_uniq_mm)
         ORFs$ORF_id_tr[i]<-paste(as.character(seqnames(ORFs[i])[1]),start(ORFs[i]),end(ORFs[i]),sep = "_")
         if(sum(psit)>0){
-            infr<-sum(psit[seq(1,length(psit),by=3)])/sum(psit)
+            infr<-round(sum(psit[seq(1,length(psit),by=3)])/sum(psit),digits = 4)
             ORFs$pct_fr[i]<-infr
         }
         if(sum(psit>0)>2){
@@ -387,7 +387,7 @@ calc_orf_pval<-function(ORFs,P_sites_rle,P_sites_uniq_rle,P_sites_uniq_mm_rle,cu
 #' \code{pval}: P-value for the multitaper F-test at 1/3 using the ORF P_sites profile
 #' \code{pval_uniq}: P-value for the multitaper F-test at 1/3 using the ORF P_sites profile (only uniquely mapping reads)
 #' \code{P_sites_raw}: Raw number of P_sites mapping to the ORF
-#' \code{pct_uniq}: Percentage of raw number of P_sites mapping to the ORF
+#' \code{P_sites_raw_unique}: Uniquely mapping P_sites mapping to the ORF
 #' \code{ORF_id_tr}: ORF id containing <tx_id>_<start>_<end>
 #' \code{Protein}: AAString sequence of the translated protein
 #' \code{region}: Genomic coordinates of the analyzed region
@@ -466,6 +466,7 @@ detect_translated_orfs<-function(selected_txs,genome_sequence,annotation,P_sites
         if(length(orfs)==0){next}
         orfs<-calc_orf_pval(ORFs = orfs,P_sites_rle = covtx,P_sites_uniq_rle = covtx_uniq,P_sites_uniq_mm_rle = covtx_uniq_mm,cutoff = cutoff_fr_ave)
         if(length(orfs)==0){next}
+        #uniq_flag
         orfs<-subset(orfs,pval<.05)
         if(length(orfs)==0){next}
         #orfs$gene_id<-mapIds(keys = tx,x = annot,column = "GENEID",keytype = "TXNAME")
@@ -669,14 +670,14 @@ select_txs<-function(region,annotation,P_sites,P_sites_uniq,junction_counts){
     gene_feat$tx_name<-NULL
     
     
-    #mcols(genbin)<-NULL
-    
     rang<-gene_feat
     a<-gene_feat$txs
-    #arrange reads etc etc
     b<-gene_feat$gene_id
     c<-gene_feat$type
+    
+    #HERE uniq_flag
     d<-gene_feat$reads
+    
     if(sum(d)<4){
         return(GRangesList())
     }
@@ -691,7 +692,6 @@ select_txs<-function(region,annotation,P_sites,P_sites_uniq,junction_counts){
         gen_bins_junct$txs<-a
         gen_bins_junct$genes_selected<-b
         gen_bins_junct$txs_selected<-a
-        gen_bins_junct$reads<-d
         gen_bins_junct$use<-"unique"
         final_ranges<-sort(gen_bins_junct)
         return(final_ranges)
@@ -851,7 +851,7 @@ select_txs<-function(region,annotation,P_sites,P_sites_uniq,junction_counts){
     b<-lapply(b,function(x){x[x%in%genes_sofar]})
     gen_bins_junct$genes_selected<-CharacterList(b)
     gen_bins_junct$txs_selected<-CharacterList(a)
-    gen_bins_junct$reads<-d
+    
     check<-sapply(gen_bins_junct$txs,FUN = length)
     use<-rep("shared",length(check))
     use[check==1]<-"unique"
@@ -1011,6 +1011,7 @@ detect_readthrough<-function(results_orf,P_sites,P_sites_uniq,P_sites_uniq_mm,ge
             
             if(length(orfs)==0){next}
             vals1<-calc_orf_pval(ORFs = orfs[1],P_sites_rle = covtx,P_sites_uniq_rle = covtx_uniq,P_sites_uniq_mm_rle = covtx_uniq_mm,cutoff = cutoff_fr_ave)
+            #uniq_flag
             if(is.na(vals1$pval) | vals1$pct_fr<.5 | vals1$pval>.05 ){next}
             vals1$Protein<-AAStringSet(as.character(translate(seq_tx[vals1@ranges],genetic.code = genetic_code_table,if.fuzzy.codon = "solve")))
             vals1$ORF_orig_tr<-orf_tx$ORF_id_tr
@@ -1028,7 +1029,7 @@ detect_readthrough<-function(results_orf,P_sites,P_sites_uniq,P_sites_uniq_mm,ge
                     if(length(orfs)<(keep+1)){break}
                     vals<-calc_orf_pval(ORFs = orfs[keep+1],P_sites_rle = covtx,P_sites_uniq_rle = covtx_uniq,P_sites_uniq_mm_rle = covtx_uniq_mm,cutoff = cutoff_fr_ave)
                     keep<-keep+1
-                    
+                    #uniq_flag
                     if(is.na(vals$pval) | vals$pct_fr<.5 | vals$pval>.05 ){keep<-0}
                     if(!is.na(vals$pval) & vals$pct_fr>.5 & vals$pval<.05 ){
                         end(vals1)<-end(vals)
@@ -1217,7 +1218,7 @@ select_quantify_ORFs<-function(results_ORFs,P_sites,P_sites_uniq,cutoff_cums=NA,
     txs_gene<-unique(unlist(gene_feat$tx_name))
     txs_sofar<-txs_gene
     
-    
+    #uniq_flag
     d<-gene_feat$reads
     a<-gene_feat$tx_name
     
@@ -1458,17 +1459,19 @@ select_quantify_ORFs<-function(results_ORFs,P_sites,P_sites_uniq,cutoff_cums=NA,
         for(i in names(feats)){
             feat<-feats[[i]]
             orf_tx<-orfs_tx[[i]]
-            cov_feat<-feat$reads/width(feat)
+            #uniq_flag
+            riz<-feat$reads
+            cov_feat<-riz/width(feat)
             js<-feat$type=="J"
             if(sum(js)>0){
-                cov_feat[js]<-feat[js]$reads/60
+                cov_feat[js]<-riz[js]/60
             }
             unq<-feat$use_ORF_selected=="unique"
             if(sum(unq)>0){
                 unq_rat<-mean(cov_feat[unq])/mean(cov_feat)
                 if(unq_rat>1){unq_rat<-1}
-                orfs_tx[[i]]$unique_features_reads<-NumericList(feat$reads[unq])
-                orfs_tx[[i]]$adj_unique_features_reads<-NumericList(feat$reads[unq])
+                orfs_tx[[i]]$unique_features_reads<-NumericList(riz[unq])
+                orfs_tx[[i]]$adj_unique_features_reads<-NumericList(riz[unq])
                 
                 
             }
@@ -1488,10 +1491,13 @@ select_quantify_ORFs<-function(results_ORFs,P_sites,P_sites_uniq,cutoff_cums=NA,
             unqs_na<-names(unqs_adj[is.na(unqs_adj)])
             for(i in unqs_na){
                 feat<-feats[[i]]
-                cov_feat<-feat$reads/width(feat)
+                
+                riz<-feat$reads
+                cov_feat<-riz/width(feat)
+                
                 js<-feat$type=="J"
                 if(sum(js)>0){
-                    cov_feat[js]<-feat$reads[js]/60
+                    cov_feat[js]<-riz[js]/60
                 }
                 cov_adj<-cov_feat
                 for(j in 1:length(feat)){
@@ -1523,10 +1529,13 @@ select_quantify_ORFs<-function(results_ORFs,P_sites,P_sites_uniq,cutoff_cums=NA,
             unqs_zero<-names(unqs_okk)
             for(i in unqs_zero){
                 feat<-feats[[i]]
-                cov_feat<-feat$reads/width(feat)
+                
+                riz<-feat$reads
+                cov_feat<-riz/width(feat)
+                
                 js<-feat$type=="J"
                 if(sum(js)>0){
-                    cov_feat[js]<-feat$reads[js]/60
+                    cov_feat[js]<-riz[js]/60
                 }
                 cov_adj<-cov_feat
                 for(j in 1:length(feat)){
@@ -1565,10 +1574,13 @@ select_quantify_ORFs<-function(results_ORFs,P_sites,P_sites_uniq,cutoff_cums=NA,
                         unqs_okk_noi<-unqs_okk[names(unqs_okk)!=i]
                         feat<-feats[[i]]
                         orf_tx<-orfs_tx[[i]]
-                        cov_feat<-feat$reads/width(feat)
+                        
+                        riz<-feat$reads
+                        cov_feat<-riz/width(feat)
+                        
                         js<-feat$type=="J"
                         if(sum(js)>0){
-                            cov_feat[js]<-feat$reads[js]/60
+                            cov_feat[js]<-riz[js]/60
                         }
                         adj_use<-feat$use_ORF_selected
                         adj_cov_feat<-cov_feat
@@ -1594,7 +1606,7 @@ select_quantify_ORFs<-function(results_ORFs,P_sites,P_sites_uniq,cutoff_cums=NA,
                             unq_rat<-mean(adj_cov_feat[adj_use=="unique"])/mean(adj_cov_feat)
                             if(mean(adj_cov_feat)==0){unq_rat<-0}
                             if(unq_rat>1){unq_rat<-1}
-                            orfs_tx[[i]]$adj_unique_features_reads<-NumericList(feat$reads[unq])
+                            orfs_tx[[i]]$adj_unique_features_reads<-NumericList(riz[unq])
                             
                         }
                         if(sum(unq)==0){
@@ -1618,10 +1630,14 @@ select_quantify_ORFs<-function(results_ORFs,P_sites,P_sites_uniq,cutoff_cums=NA,
                 unqs_na<-names(unqs_adj[is.na(unqs_adj)])
                 for(i in unqs_na){
                     feat<-feats[[i]]
-                    cov_feat<-feat$reads/width(feat)
+                    
+                    riz<-feat$reads
+                    cov_feat<-riz/width(feat)
+                    
+                    
                     js<-feat$type=="J"
                     if(sum(js)>0){
-                        cov_feat[js]<-feat[js]$reads/60
+                        cov_feat[js]<-riz[js]/60
                     }
                     cov_adj<-cov_feat
                     for(j in 1:length(feat)){
@@ -1668,11 +1684,14 @@ select_quantify_ORFs<-function(results_ORFs,P_sites,P_sites_uniq,cutoff_cums=NA,
         
         if(optimiz==TRUE){
             unqs_optim_noopt<-unqs_optim
+            #uniq_flag
             cov_ps_unqs<-orftxs$P_sites_raw/width(orftxs)
             names(cov_ps_unqs)<-orftxs$ORF_id_tr
             cov_ps_unqs<-cov_ps_unqs[names(unqs_adj)]
+            #uniq_flag
             featsall$coverage<-featsall$reads/width(featsall)
             jxs<-featsall$type=="J"
+            #uniq_flag
             featsall$coverage[jxs]<-featsall$reads[jxs]/60
             
             vals<-cov_ps_unqs*unqs_optim
@@ -1709,13 +1728,17 @@ select_quantify_ORFs<-function(results_ORFs,P_sites,P_sites_uniq,cutoff_cums=NA,
         if(scaling==TRUE){
             
             #scale to adjust coverage?
+            
+            #uniq_flag
             cov_ps_unqs<-orftxs$P_sites_raw/width(orftxs)
             names(cov_ps_unqs)<-orftxs$ORF_id_tr
             cov_ps_unqs<-cov_ps_unqs[names(unqs_optim)]
             
-            featsall$coverage<-featsall$reads/width(featsall)
+            #uniq_flag
+            covo<-featsall$reads/width(featsall)
+            featsall$coverage<-covo
             jxs<-featsall$type=="J"
-            featsall$coverage[jxs]<-featsall$reads[jxs]/60
+            featsall$coverage[jxs]<-covo[jxs]/60
             
             cov_ps_unqs_adj<-cov_ps_unqs*unqs_optim
             cov_unpcts<-NumericList(lapply(featsall$ORF_id_tr_selected,function(x){cov_ps_unqs_adj[x]}))
@@ -1732,6 +1755,7 @@ select_quantify_ORFs<-function(results_ORFs,P_sites,P_sites_uniq,cutoff_cums=NA,
             feat<-feats[[i]]
             orf_tx<-orfs_tx[[i]]
             
+            #uniq_flag
             ps<-orf_tx$P_sites_raw
             unq_rat<-unqs_optim[i]
             
@@ -1813,8 +1837,8 @@ select_quantify_ORFs<-function(results_ORFs,P_sites,P_sites_uniq,cutoff_cums=NA,
         fs<-unlist(orfs_genes)
         #put isovalues
         for(g in names(orfs_tx)){
-            orfs_tx[[g]]$ORF_pct_P_sites<-fs$ORF_pct_P_sites[fs$ORF_id_tr==g]
-            orfs_tx[[g]]$ORF_pct_P_sites_pN<-fs$ORF_pct_P_sites_pN[fs$ORF_id_tr==g]
+            orfs_tx[[g]]$ORF_pct_P_sites<-round(fs$ORF_pct_P_sites[fs$ORF_id_tr==g],digits = 4)
+            orfs_tx[[g]]$ORF_pct_P_sites_pN<-round(fs$ORF_pct_P_sites_pN[fs$ORF_id_tr==g],digits = 4)
         }
         counter<-counter+1
     }
@@ -2933,6 +2957,14 @@ run_SaTAnn<-function(for_SaTAnn_file,annotation_file,n_cores,prefix=for_SaTAnn_f
     ORFs_found<-ORFs_found[lens>1]
     ORFs_tx<-unlist(GRangesList(unlist(sapply(ORFs_found,function(x){unlist(x$ORFs_tx_position)}))))
     
+    ORFs_feat<-unlist(sapply(ORFs_found,function(x){unlist(x$selected_ORFs_features)}))
+    ORFs_feat<-GRangesList(sapply(ORFs_feat,function(x){
+        x$X$tx_name<-NULL
+        return(x)
+    }))
+    
+    #uniq_flag_postfinding
+    #use the features to subset good ORFs
     na_ps<-is.na(ORFs_tx$P_sites)
     ORFs_tx$P_sites_pN<-NA
     ORFs_tx$P_sites_pN[!na_ps]<-ORFs_tx$P_sites[!na_ps]/(width(ORFs_tx)[!na_ps])
@@ -2942,12 +2974,6 @@ run_SaTAnn<-function(for_SaTAnn_file,annotation_file,n_cores,prefix=for_SaTAnn_f
     
     
     ORFs_gen<-unlist(GRangesList(sapply(ORFs_found,function(x){unlist(x$ORFs_genomic_position)})))
-    
-    ORFs_feat<-unlist(sapply(ORFs_found,function(x){unlist(x$selected_ORFs_features)}))
-    ORFs_feat<-GRangesList(sapply(ORFs_feat,function(x){
-        x$X$tx_name<-NULL
-        return(x)
-    }))
     
     ORFs_spl_feat_longest<-unlist(GRangesList(sapply(ORFs_found,function(x){unlist(x$ORFs_splice_feats$annotation_wrt_longest)})))
     ORFs_spl_feat_maxORF<-unlist(GRangesList(sapply(ORFs_found,function(x){unlist(x$ORFs_splice_feats$annotation_wrt_maxORF)})))
@@ -4312,7 +4338,7 @@ prepare_for_SaTAnn<-function(annotation_file,bam_file,path_to_rl_cutoff_file=NA,
 #' The plots created are as follows:\cr\cr
 #' \code{ORFs_found}: Number of ORF categories detected per gene biotype.\cr
 #' \code{ORFs_found_pct_tr}: Distribution of ORF_pct_P_sites (% of gene translation) for different ORF categories and gene biotypes.\cr
-#' \code{ORFs_found_ORFs_pM}: Distribution of ORF_ORFs_pM (P-sites per nucleotide per Million, similar to TPM) for different ORF categories and gene biotypes.\cr
+#' \code{ORFs_found_ORFs_pM}: Distribution of ORFs_pM (ORFs per Million, similar to TPM) for different ORF categories and gene biotypes.\cr
 #' \code{ORFs_found_len}: Distribution of ORF length for different ORF categories and gene biotypes.\cr
 #' \code{ORFs_genes}: Number of detected ORFs per gene.\cr
 #' \code{ORFs_genes_tpm}: Gene level TPM values, plotted by number of ORFs detected.\cr
