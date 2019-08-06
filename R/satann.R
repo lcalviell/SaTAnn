@@ -318,7 +318,7 @@ calc_orf_pval<-function(ORFs,P_sites_rle,P_sites_uniq_rle,P_sites_uniq_mm_rle,cu
     ORFs$pval_uniq<-NA
     ORFs$P_sites_raw<-NA
     ORFs$P_sites_raw_uniq<-NA
-    ORFs$P_sites_raw_uniq_notmm<-NA
+    ORFs$P_sites_raw_uniq_mm<-NA
     ORFs$pct_fr<-NA
     
     
@@ -334,7 +334,7 @@ calc_orf_pval<-function(ORFs,P_sites_rle,P_sites_uniq_rle,P_sites_uniq_mm_rle,cu
         ps_unq<-round((sum(psit_uniq)-sum(psit_uniq_mm))/sum(psit)*100,digits = 2)
         if(is.na(ps_unq)){ps_unq<-0}
         
-        ORFs$P_sites_raw_uniq_notmm[i]<-sum(psit_uniq_mm)
+        ORFs$P_sites_raw_uniq_mm[i]<-sum(psit_uniq_mm)
         ORFs$ORF_id_tr[i]<-paste(as.character(seqnames(ORFs[i])[1]),start(ORFs[i]),end(ORFs[i]),sep = "_")
         if(sum(psit)>0){
             infr<-round(sum(psit[seq(1,length(psit),by=3)])/sum(psit),digits = 4)
@@ -376,6 +376,7 @@ calc_orf_pval<-function(ORFs,P_sites_rle,P_sites_uniq_rle,P_sites_uniq_mm_rle,cu
 #' @param start_sel_cutoff \code{cutoff} parameter for the \code{select_start} function
 #' @param start_sel_cutoff_ave \code{cutoff_ave} parameter for the \code{select_start} function
 #' @param cutoff_fr_ave \code{cutoff} parameter for the  \code{calc_orf_pval} functions
+#' @param uniq_signal Use only signal from uniquely mapping reads? Defaults to \code{FALSE}.
 #' @return A list with transcript coordinates, exonic coordinates and statistics for each ORF exonic bin and junction(from \code{select_txs}).\cr\cr
 #' The value for each column is as follows:\cr\cr
 #' \code{ave_pct_fr}: average percentage of in-frame reads for each codon in the ORF
@@ -401,7 +402,7 @@ calc_orf_pval<-function(ORFs,P_sites_rle,P_sites_uniq_rle,P_sites_uniq_mm_rle,cu
 
 detect_translated_orfs<-function(selected_txs,genome_sequence,annotation,P_sites,P_sites_uniq,P_sites_uniq_mm,genomic_region,genetic_code,
                                  all_starts=T,nostarts=F,start_sel_cutoff=NA,start_sel_cutoff_ave=.5,
-                                 cutoff_fr_ave=.5){
+                                 cutoff_fr_ave=.5,uniq_signal=F){
     
     orfs_gr<-GRangesList()
     orfs_gen_gr<-GRangesList()
@@ -467,7 +468,12 @@ detect_translated_orfs<-function(selected_txs,genome_sequence,annotation,P_sites
         orfs<-calc_orf_pval(ORFs = orfs,P_sites_rle = covtx,P_sites_uniq_rle = covtx_uniq,P_sites_uniq_mm_rle = covtx_uniq_mm,cutoff = cutoff_fr_ave)
         if(length(orfs)==0){next}
         #uniq_flag
-        orfs<-subset(orfs,pval<.05)
+        if(uniq_signal){
+            orfs<-subset(orfs,pval_uniq<.05)
+        }
+        if(!uniq_signal){
+            orfs<-subset(orfs,pval<.05)
+        }
         if(length(orfs)==0){next}
         #orfs$gene_id<-mapIds(keys = tx,x = annot,column = "GENEID",keytype = "TXNAME")
         orfs$Protein<-AAStringSet(rep("NA",length(orfs)))
@@ -620,12 +626,13 @@ from_tx_togen<-function(ORFs,exons,introns){
 #' @param P_sites GRanges object with P_sites positions
 #' @param P_sites_uniq GRanges object with uniquely mapping P_sites positions
 #' @param junction_counts GRanges object containing Ribo-seq counts on the set of annotated junctions
+#' @param uniq_signal Use only signal from uniquely mapping reads? Defaults to \code{FALSE}.
 #' @return GRanges object with the set of counts on each exonic bin and junctions, together with the list
 #' of selected transcripts
 #' @seealso \code{\link{prepare_annotation_files}}
 #' @export
 
-select_txs<-function(region,annotation,P_sites,P_sites_uniq,junction_counts){
+select_txs<-function(region,annotation,P_sites,P_sites_uniq,junction_counts,uniq_signal=F){
     
     stra<-as.character(region@strand)
     gene_feat <- junction_counts[junction_counts %over% region]
@@ -676,7 +683,13 @@ select_txs<-function(region,annotation,P_sites,P_sites_uniq,junction_counts){
     c<-gene_feat$type
     
     #HERE uniq_flag
-    d<-gene_feat$reads
+    if(uniq_signal){
+        d<-gene_feat$unique_reads
+    }
+    if(!uniq_signal){
+        d<-gene_feat$reads
+    }
+    
     
     if(sum(d)<4){
         return(GRangesList())
@@ -957,11 +970,12 @@ get_reathr_seq<-function(tx_name,orf,sequence,genetic_code){
 #' @param P_sites_uniq_mm Rle signal of uniquely mapping P_sites with mismatches along the transcript
 #' @param cutoff_fr_ave \code{cutoff} parameter for the  \code{calc_orf_pval} functions
 #' @param genetic_code_table GENETIC_CODE table to use
+#' @param uniq_signal Use only signal from uniquely mapping reads? Defaults to \code{FALSE}.
 #' @return GRanges object with the set of translated readthrough regions
 #' @seealso \code{\link{detect_translated_orfs}}, \code{\link{select_quantify_ORFs}}, \code{\link{annotate_ORFs}}, \code{\link{get_reathr_seq}}
 #' @export
 
-detect_readthrough<-function(results_orf,P_sites,P_sites_uniq,P_sites_uniq_mm,genome_sequence,annotation,genetic_code_table,cutoff_fr_ave=.5){
+detect_readthrough<-function(results_orf,P_sites,P_sites_uniq,P_sites_uniq_mm,genome_sequence,annotation,genetic_code_table,cutoff_fr_ave=.5,uniq_signal=F){
     P_sites<-P_sites[!P_sites%over%unlist(results_orf$ORFs_genomic_position)]
     P_sites_uniq<-P_sites_uniq[!P_sites_uniq%over%unlist(results_orf$ORFs_genomic_position)]
     P_sites_uniq_mm<-P_sites_uniq_mm[!P_sites_uniq_mm%over%unlist(results_orf$ORFs_genomic_position)]
@@ -1012,7 +1026,12 @@ detect_readthrough<-function(results_orf,P_sites,P_sites_uniq,P_sites_uniq_mm,ge
             if(length(orfs)==0){next}
             vals1<-calc_orf_pval(ORFs = orfs[1],P_sites_rle = covtx,P_sites_uniq_rle = covtx_uniq,P_sites_uniq_mm_rle = covtx_uniq_mm,cutoff = cutoff_fr_ave)
             #uniq_flag
-            if(is.na(vals1$pval) | vals1$pct_fr<.5 | vals1$pval>.05 ){next}
+            if(!uniq_signal){
+                if(is.na(vals1$pval) | vals1$pct_fr<.5 | vals1$pval>.05 ){next}
+            }
+            if(uniq_signal){
+                if(is.na(vals1$pval_uniq) | vals1$pct_fr<.5 | vals1$pval_uniq>.05 ){next}
+            }
             vals1$Protein<-AAStringSet(as.character(translate(seq_tx[vals1@ranges],genetic.code = genetic_code_table,if.fuzzy.codon = "solve")))
             vals1$ORF_orig_tr<-orf_tx$ORF_id_tr
             vals1$n_stops_readth<-1
@@ -1030,20 +1049,42 @@ detect_readthrough<-function(results_orf,P_sites,P_sites_uniq,P_sites_uniq_mm,ge
                     vals<-calc_orf_pval(ORFs = orfs[keep+1],P_sites_rle = covtx,P_sites_uniq_rle = covtx_uniq,P_sites_uniq_mm_rle = covtx_uniq_mm,cutoff = cutoff_fr_ave)
                     keep<-keep+1
                     #uniq_flag
-                    if(is.na(vals$pval) | vals$pct_fr<.5 | vals$pval>.05 ){keep<-0}
-                    if(!is.na(vals$pval) & vals$pct_fr>.5 & vals$pval<.05 ){
-                        end(vals1)<-end(vals)
-                        vals1<-calc_orf_pval(ORFs = vals1,P_sites_rle = covtx,P_sites_uniq_rle = covtx_uniq,P_sites_uniq_mm_rle = covtx_uniq_mm,cutoff = cutoff_fr_ave)
-                        vals1$Protein<-AAStringSet(as.character(translate(seq_tx[vals1@ranges],genetic.code = genetic_code_table,if.fuzzy.codon = "solve")))
-                        vals1$ORF_orig_tr<-orf_tx$ORF_id_tr
-                        vals1$n_stops_readth<-keep
-                        vals1$compatible_id<-CharacterList("")
-                        vals1$compatible_original_id<-CharacterList("")
-                        mcsva<-mcols(vals1)
-                        mcsva[,c("gene_id","gene_biotype","gene_name","transcript_id","transcript_biotype")]<-""
-                        mcols(vals1)<-mcsva
-                        
+                    
+                    if(!uniq_signal){
+                        if(is.na(vals1$pval) | vals1$pct_fr<.5 | vals1$pval>.05 ){keep<-0}
+                        if(!is.na(vals$pval) & vals$pct_fr>.5 & vals$pval<.05 ){
+                            end(vals1)<-end(vals)
+                            vals1<-calc_orf_pval(ORFs = vals1,P_sites_rle = covtx,P_sites_uniq_rle = covtx_uniq,P_sites_uniq_mm_rle = covtx_uniq_mm,cutoff = cutoff_fr_ave)
+                            vals1$Protein<-AAStringSet(as.character(translate(seq_tx[vals1@ranges],genetic.code = genetic_code_table,if.fuzzy.codon = "solve")))
+                            vals1$ORF_orig_tr<-orf_tx$ORF_id_tr
+                            vals1$n_stops_readth<-keep
+                            vals1$compatible_id<-CharacterList("")
+                            vals1$compatible_original_id<-CharacterList("")
+                            mcsva<-mcols(vals1)
+                            mcsva[,c("gene_id","gene_biotype","gene_name","transcript_id","transcript_biotype")]<-""
+                            mcols(vals1)<-mcsva
+                            
+                        }
                     }
+                    if(uniq_signal){
+                        if(is.na(vals1$pval_uniq) | vals1$pct_fr<.5 | vals1$pval_uniq>.05 ){keep<-0}
+                        if(!is.na(vals$pval_uniq) & vals$pct_fr>.5 & vals$pval_uniq<.05 ){
+                            end(vals1)<-end(vals)
+                            vals1<-calc_orf_pval(ORFs = vals1,P_sites_rle = covtx,P_sites_uniq_rle = covtx_uniq,P_sites_uniq_mm_rle = covtx_uniq_mm,cutoff = cutoff_fr_ave)
+                            vals1$Protein<-AAStringSet(as.character(translate(seq_tx[vals1@ranges],genetic.code = genetic_code_table,if.fuzzy.codon = "solve")))
+                            vals1$ORF_orig_tr<-orf_tx$ORF_id_tr
+                            vals1$n_stops_readth<-keep
+                            vals1$compatible_id<-CharacterList("")
+                            vals1$compatible_original_id<-CharacterList("")
+                            mcsva<-mcols(vals1)
+                            mcsva[,c("gene_id","gene_biotype","gene_name","transcript_id","transcript_biotype")]<-""
+                            mcols(vals1)<-mcsva
+                            
+                        }
+                    }
+                    
+                    
+                    
                 }
             }
             readthroughs<-unique(suppressWarnings(c(readthroughs,vals1)))
@@ -1105,27 +1146,53 @@ detect_readthrough<-function(results_orf,P_sites,P_sites_uniq,P_sites_uniq_mm,ge
 #' @param optimiz (Beta) should numerical optimization (minimizing distance between observed coverage and expected coverage) 
 #' be used to quantify ORF translation? Defaults to FALSE
 #' @param scaling Additional scaling value taking into account total signal on the detected ORFs to adjust quantification estimates (recommended). Defaults to TRUE
+#' @param uniq_signal Use only signal from uniquely mapping reads? Defaults to \code{FALSE}.
 #' @return modified \code{results_ORFs} object with the selected ORFs including quantification estimates.
 #' @seealso \code{\link{detect_translated_orfs}}, \code{\link{select_txs}}
 #' @export
 
 
-select_quantify_ORFs<-function(results_ORFs,P_sites,P_sites_uniq,cutoff_cums=NA,cutoff_pct=2,cutoff_P_sites=NA,optimiz=FALSE,scaling=TRUE){
+select_quantify_ORFs<-function(results_ORFs,P_sites,P_sites_uniq,cutoff_cums=NA,cutoff_pct=2,cutoff_P_sites=NA,optimiz=FALSE,scaling=TRUE,uniq_signal=F){
     
     select_feat <- results_ORFs[["ORFs_features"]]
+    
+    select_feat<-endoapply(select_feat,function(x){
+        unqid<-paste(x@ranges,x$type,names(x),sep="_")
+        x<-x[!duplicated(unqid)]
+        x
+    })
+    
     select_feats<-unlist(select_feat)
+    
+    nmss<-c()
+    for(nm in names(results_ORFs[["ORFs_features"]])){
+        nmss<-c(nmss,rep(nm,length(select_feat[[nm]])))
+    }
+    names(select_feats)<-nmss
     select_feats_jun<-select_feats[select_feats$type=="J"]
-    ran_j<-select_feats_jun@ranges
-    #startend!
-    df<-data.frame(stend=paste(ran_j@start,end(ran_j),sep="_"),orfs=names(ran_j),stringsAsFactors=F)
-    tab_j<-as.matrix(table(df$stend,df$orfs))
     
-    orfs_print<-colnames(tab_j)
-    
-    orfs_print<-apply(tab_j,MARGIN=1,FUN=function(x){orfs_print[which(x>0)]})
-    orfs_print2<-orfs_print
-    names(orfs_print2)<-NULL
-    
+    # ran_j<-IRanges()
+    # allofthem<-unique(unlist(select_feats_jun$txs_orfs))
+    # for(i in)
+    if(length(select_feats_jun)>0){
+        
+        
+        ran_j<-select_feats_jun@ranges
+        #startend!
+        df<-data.frame(stend=paste(ran_j@start,end(ran_j),sep="_"),orfs=names(ran_j),stringsAsFactors=F)
+        tab_j<-as.matrix(table(df$stend,df$orfs))
+        
+        orfs_print<-colnames(tab_j)
+        listorf_print<-list()
+        for(junso in rownames(tab_j)){
+            listorf_print[[junso]]<-orfs_print[which(tab_j[junso,]>0)]
+        }
+        
+        orfs_print2<-listorf_print
+        orfs_printWRONG<-apply(tab_j,MARGIN=1,FUN=function(x){colnames(tab_j)[which(x>0)]})
+        
+        #names(orfs_print2)<-NULL
+    }
     orfs <- results_ORFs[["ORFs_genomic_position"]]
     stra<-as.character(select_feats[1]@strand)
     
@@ -1164,7 +1231,7 @@ select_quantify_ORFs<-function(results_ORFs,P_sites,P_sites_uniq,cutoff_cums=NA,
             d2[hts[i,1]]<-hts[i,2]
         }
     }
-        
+    
     
     exbin$reads<-d
     exbin$unique_reads<-d2
@@ -1188,7 +1255,7 @@ select_quantify_ORFs<-function(results_ORFs,P_sites,P_sites_uniq,cutoff_cums=NA,
         junc$reads<-reads_j
         junc$unique_reads<-reads_j_uniq
         
-        orfs_jj<-orfs_print2[match(df$stend,names(orfs_print))]
+        orfs_jj<-orfs_print2[match(df$stend,names(orfs_print2))]
         #junc$tx_name<-as(orfs_jj,"CharacterList")
         mcols(junc)<-junc[,c("reads","unique_reads")]
         tx_ex<-exbin$tx_name
@@ -1219,9 +1286,15 @@ select_quantify_ORFs<-function(results_ORFs,P_sites,P_sites_uniq,cutoff_cums=NA,
     txs_sofar<-txs_gene
     
     #uniq_flag
-    d<-gene_feat$reads
-    a<-gene_feat$tx_name
     
+    if(uniq_signal){
+        d<-gene_feat$unique_reads
+    }
+    if(!uniq_signal){
+        d<-gene_feat$reads
+    }
+    
+    a<-gene_feat$tx_name
     
     mat<-matrix(data=0,nrow=length(d),ncol=length(txs_sofar))
     colnames(mat)<-txs_sofar
@@ -1459,8 +1532,17 @@ select_quantify_ORFs<-function(results_ORFs,P_sites,P_sites_uniq,cutoff_cums=NA,
         for(i in names(feats)){
             feat<-feats[[i]]
             orf_tx<-orfs_tx[[i]]
+            
             #uniq_flag
-            riz<-feat$reads
+            if(!uniq_signal){
+                riz<-feat$reads
+            }
+            
+            if(uniq_signal){
+                riz<-feat$unique_reads
+            }
+            
+            
             cov_feat<-riz/width(feat)
             js<-feat$type=="J"
             if(sum(js)>0){
@@ -1685,14 +1767,31 @@ select_quantify_ORFs<-function(results_ORFs,P_sites,P_sites_uniq,cutoff_cums=NA,
         if(optimiz==TRUE){
             unqs_optim_noopt<-unqs_optim
             #uniq_flag
-            cov_ps_unqs<-orftxs$P_sites_raw/width(orftxs)
+            
+            if(!uniq_signal){
+                cov_ps_unqs<-orftxs$P_sites_raw/width(orftxs)
+            }
+            
+            if(uniq_signal){
+                cov_ps_unqs<-orftxs$P_sites_raw_uniq/width(orftxs)
+            }
+            
+            
             names(cov_ps_unqs)<-orftxs$ORF_id_tr
             cov_ps_unqs<-cov_ps_unqs[names(unqs_adj)]
             #uniq_flag
-            featsall$coverage<-featsall$reads/width(featsall)
-            jxs<-featsall$type=="J"
-            #uniq_flag
-            featsall$coverage[jxs]<-featsall$reads[jxs]/60
+            
+            if(!uniq_signal){
+                featsall$coverage<-featsall$reads/width(featsall)
+                jxs<-featsall$type=="J"
+                featsall$coverage[jxs]<-featsall$reads[jxs]/60
+            }
+            
+            if(uniq_signal){
+                featsall$coverage<-featsall$unique_reads/width(featsall)
+                jxs<-featsall$type=="J"
+                featsall$coverage[jxs]<-featsall$unique_reads[jxs]/60
+            }
             
             vals<-cov_ps_unqs*unqs_optim
             expect<-unlist(lapply(featsall$ORF_id_tr_selected,function(x){sum(vals[x])}))
@@ -1730,12 +1829,26 @@ select_quantify_ORFs<-function(results_ORFs,P_sites,P_sites_uniq,cutoff_cums=NA,
             #scale to adjust coverage?
             
             #uniq_flag
-            cov_ps_unqs<-orftxs$P_sites_raw/width(orftxs)
+            
+            if(!uniq_signal){
+                cov_ps_unqs<-orftxs$P_sites_raw/width(orftxs)
+            }
+            
+            if(uniq_signal){
+                cov_ps_unqs<-orftxs$P_sites_raw_uniq/width(orftxs)
+            }
+            
             names(cov_ps_unqs)<-orftxs$ORF_id_tr
             cov_ps_unqs<-cov_ps_unqs[names(unqs_optim)]
             
             #uniq_flag
-            covo<-featsall$reads/width(featsall)
+            if(uniq_signal){
+                covo<-featsall$unique_reads/width(featsall)
+            }
+            
+            if(!uniq_signal){
+                covo<-featsall$reads/width(featsall)
+            }
             featsall$coverage<-covo
             jxs<-featsall$type=="J"
             featsall$coverage[jxs]<-covo[jxs]/60
@@ -1756,7 +1869,13 @@ select_quantify_ORFs<-function(results_ORFs,P_sites,P_sites_uniq,cutoff_cums=NA,
             orf_tx<-orfs_tx[[i]]
             
             #uniq_flag
-            ps<-orf_tx$P_sites_raw
+            if(!uniq_signal){
+                ps<-orf_tx$P_sites_raw
+            }
+            
+            if(uniq_signal){
+                ps<-orf_tx$P_sites_raw_uniq
+            }
             unq_rat<-unqs_optim[i]
             
             ps_norm<-ps*unq_rat
@@ -2758,6 +2877,7 @@ annotate_ORFs<-function(results_ORFs,Annotation,genome_sequence,region,genetic_c
 #' @param orf_quant.cutoff_cums \code{cutoff_cums} parameter for the \code{select_quantify_ORFs} function
 #' @param orf_quant.cutoff_pct \code{cutoff_pct} parameter for the \code{select_quantify_ORFs} function
 #' @param orf_quant.cutoff_P_sites \code{cutoff_P_sites} parameter for the \code{select_quantify_ORFs} function
+#' @param unique_reads Use only signal from uniquely mapping reads? Defaults to \code{FALSE}.
 #' @return A list containing transcript coordinates, exonic coordinates and annotation for each ORF.\cr\cr
 #' The description for each list object is as follows:\cr\cr
 #' \code{ORFs_tx}: transcript coordinates of the detected ORFs.\cr
@@ -2773,17 +2893,19 @@ annotate_ORFs<-function(results_ORFs,Annotation,genome_sequence,region,genetic_c
 
 SaTAnn<-function(region,for_SaTAnn,genetic_code_region,
                  orf_find.all_starts=T,orf_find.nostarts=F,orf_find.start_sel_cutoff = NA,orf_find.start_sel_cutoff_ave = .5,
-                 orf_find.cutoff_fr_ave=.5,orf_quant.cutoff_cums = NA,orf_quant.cutoff_pct = 2,orf_quant.cutoff_P_sites=NA){
+                 orf_find.cutoff_fr_ave=.5,orf_quant.cutoff_cums = NA,orf_quant.cutoff_pct = 2,orf_quant.cutoff_P_sites=NA,unique_reads=F){
     
     P_sites_region<-for_SaTAnn$P_sites_all[for_SaTAnn$P_sites_all%over%region]
     P_sites_uniq_region<-for_SaTAnn$P_sites_uniq[for_SaTAnn$P_sites_uniq%over%region]
     P_sites_uniq_mm_region<-for_SaTAnn$P_sites_uniq_mm[for_SaTAnn$P_sites_uniq_mm%over%region]
     
     res_orfs<-list()
+    minimum_reads<-length(P_sites_region)>4
+    if(unique_reads){length(P_sites_uniq_region)>4}
     
-    if(length(P_sites_region)>4){
+    if(minimum_reads){
         
-        selected_transcripts<-select_txs(region = region,P_sites = P_sites_region,P_sites_uniq = P_sites_uniq_region,annotation = GTF_annotation,junction_counts=for_SaTAnn$junctions)
+        selected_transcripts<-select_txs(region = region,P_sites = P_sites_region,P_sites_uniq = P_sites_uniq_region,annotation = GTF_annotation,junction_counts=for_SaTAnn$junctions,uniq_signal = unique_reads)
         if(length(selected_transcripts)>0){
             res_orfs<-suppressWarnings(detect_translated_orfs(selected_txs = selected_transcripts,genome_sequence = genome_seq,annotation = GTF_annotation,
                                                               P_sites = P_sites_region,P_sites_uniq = P_sites_uniq_region,P_sites_uniq_mm = P_sites_uniq_mm_region,
@@ -2791,17 +2913,17 @@ SaTAnn<-function(region,for_SaTAnn,genetic_code_region,
                                                               all_starts=orf_find.all_starts,nostarts=,orf_find.nostarts,
                                                               start_sel_cutoff=orf_find.start_sel_cutoff,
                                                               start_sel_cutoff_ave=orf_find.start_sel_cutoff_ave,
-                                                              cutoff_fr_ave=orf_find.cutoff_fr_ave))
+                                                              cutoff_fr_ave=orf_find.cutoff_fr_ave,uniq_signal = unique_reads))
         }
         if(length(res_orfs)>0){
             res_orfs<-select_quantify_ORFs(results_ORFs=res_orfs,P_sites = P_sites_region,P_sites_uniq = P_sites_uniq_region,
-                                           cutoff_cums = orf_quant.cutoff_cums,cutoff_pct = orf_quant.cutoff_pct,cutoff_P_sites=orf_quant.cutoff_P_sites)
+                                           cutoff_cums = orf_quant.cutoff_cums,cutoff_pct = orf_quant.cutoff_pct,cutoff_P_sites=orf_quant.cutoff_P_sites,uniq_signal = unique_reads)
         }
         if(length(res_orfs)>0){
             
             res_orfs<-annotate_ORFs(results_ORFs=res_orfs,Annotation=GTF_annotation,genome_sequence = genome_seq,region=region,genetic_code=genetic_code_region)
             res_orfs[["readthrough"]]<-suppressWarnings(detect_readthrough(results_orf = res_orfs,P_sites = P_sites_region,P_sites_uniq = P_sites_uniq_region,P_sites_uniq_mm = P_sites_uniq_mm_region,
-                                                                           genome_sequence=genome_seq, annotation = GTF_annotation,genetic_code_table=genetic_code_region,cutoff_fr_ave=orf_find.cutoff_fr_ave))
+                                                                           genome_sequence=genome_seq, annotation = GTF_annotation,genetic_code_table=genetic_code_region,cutoff_fr_ave=orf_find.cutoff_fr_ave,uniq_signal = unique_reads))
             
             
         }
@@ -2837,6 +2959,8 @@ SaTAnn<-function(region,for_SaTAnn,genetic_code_region,
 #' @param stn.orf_quant.cutoff_cums \code{orf_quant.cutoff_cums} parameter for the \code{SaTAnn} function
 #' @param stn.orf_quant.cutoff_pct \code{orf_quant.cutoff_pct} parameter for the \code{SaTAnn} function
 #' @param stn.orf_quant.cutoff_P_sites \code{orf_quant.cutoff_P_sites} parameter for the \code{SaTAnn} function
+#' @param unique_reads_only Use only signal from uniquely mapping reads? Defaults to \code{FALSE}.
+#' @param canonical_start_only Use only the canonical start codon (no alternative initiation codons)? Defaults to \code{TRUE}.
 #' @return A set of output files containing transcript coordinates, exonic coordinates and annotation for each ORF, including optional GTF and protein fasta files.\cr\cr
 #' The description for each list object is as follows:\cr\cr
 #' \code{tmp_SaTAnn_results}: (Optional) RData object file containing the entire set of results for each genomic region.\cr
@@ -2852,7 +2976,7 @@ run_SaTAnn<-function(for_SaTAnn_file,annotation_file,n_cores,prefix=for_SaTAnn_f
                      write_temp_files=T,write_GTF_file=T,write_protein_fasta=T,interactive=T,
                      stn.orf_find.all_starts=T,stn.orf_find.nostarts=F,stn.orf_find.start_sel_cutoff = NA,
                      stn.orf_find.start_sel_cutoff_ave = .5,stn.orf_find.cutoff_fr_ave=.5,
-                     stn.orf_quant.cutoff_cums = NA,stn.orf_quant.cutoff_pct = 2,stn.orf_quant.cutoff_P_sites=NA){    
+                     stn.orf_quant.cutoff_cums = NA,stn.orf_quant.cutoff_pct = 2,stn.orf_quant.cutoff_P_sites=NA,unique_reads_only=F,canonical_start_only=T){    
     if(n_cores>1){
         registerDoMC(n_cores)
     }
@@ -2907,12 +3031,16 @@ run_SaTAnn<-function(for_SaTAnn_file,annotation_file,n_cores,prefix=for_SaTAnn_f
             gen_region<-genes_red[g]
             genetcd<-GTF_annotation$genetic_codes$genetic_code[rownames(GTF_annotation$genetic_codes)==as.character(seqnames(gen_region))]
             genetcd<-getGeneticCode(genetcd)
+            if(canonical_start_only){
+                attributes(genetcd)$alt_init_codons<-names(which(genetcd=="M"))
+            }
+            
             
             SaTAnn(region=gen_region,for_SaTAnn=for_SaTAnn_data,genetic_code_region=genetcd,
                    orf_find.all_starts=stn.orf_find.all_starts,orf_find.nostarts=stn.orf_find.nostarts,
                    orf_find.start_sel_cutoff = stn.orf_find.start_sel_cutoff,orf_find.start_sel_cutoff_ave = stn.orf_find.start_sel_cutoff_ave,
                    orf_find.cutoff_fr_ave=stn.orf_find.cutoff_fr_ave,orf_quant.cutoff_cums = stn.orf_quant.cutoff_cums,
-                   orf_quant.cutoff_pct = stn.orf_quant.cutoff_pct,orf_quant.cutoff_P_sites=stn.orf_quant.cutoff_P_sites)
+                   orf_quant.cutoff_pct = stn.orf_quant.cutoff_pct,orf_quant.cutoff_P_sites=stn.orf_quant.cutoff_P_sites,unique_reads = unique_reads_only)
         }
         
     }
@@ -2929,7 +3057,7 @@ run_SaTAnn<-function(for_SaTAnn_file,annotation_file,n_cores,prefix=for_SaTAnn_f
                                     orf_find.all_starts=stn.orf_find.all_starts,orf_find.nostarts=stn.orf_find.nostarts,
                                     orf_find.start_sel_cutoff = stn.orf_find.start_sel_cutoff,orf_find.start_sel_cutoff_ave = stn.orf_find.start_sel_cutoff_ave,
                                     orf_find.cutoff_fr_ave=stn.orf_find.cutoff_fr_ave,orf_quant.cutoff_cums = stn.orf_quant.cutoff_cums,
-                                    orf_quant.cutoff_pct = stn.orf_quant.cutoff_pct,orf_quant.cutoff_P_sites=stn.orf_quant.cutoff_P_sites)
+                                    orf_quant.cutoff_pct = stn.orf_quant.cutoff_pct,orf_quant.cutoff_P_sites=stn.orf_quant.cutoff_P_sites,unique_reads = unique_reads_only)
             
             
         }
@@ -2963,8 +3091,9 @@ run_SaTAnn<-function(for_SaTAnn_file,annotation_file,n_cores,prefix=for_SaTAnn_f
         return(x)
     }))
     
-    #uniq_flag_postfinding
-    #use the features to subset good ORFs
+    
+    #toAdd - use the features unique to ORFs as confidence score
+    
     na_ps<-is.na(ORFs_tx$P_sites)
     ORFs_tx$P_sites_pN<-NA
     ORFs_tx$P_sites_pN[!na_ps]<-ORFs_tx$P_sites[!na_ps]/(width(ORFs_tx)[!na_ps])
@@ -2983,6 +3112,26 @@ run_SaTAnn<-function(for_SaTAnn_file,annotation_file,n_cores,prefix=for_SaTAnn_f
     }
     SaTAnn_results<-list(ORFs_tx,ORFs_gen,ORFs_feat,ORFs_spl_feat_longest,ORFs_spl_feat_maxORF,ORFs_readthroughs,ORFs_txs_feats,selected_txs)
     names(SaTAnn_results)<-c("ORFs_tx","ORFs_gen","ORFs_feat","ORFs_spl_feat_longest","ORFs_spl_feat_maxORF","ORFs_readthroughs","ORFs_txs_feats","selected_txs")
+    
+    #added for seqinfo problem
+    
+
+    x<-SaTAnn_results$ORFs_readthroughs
+    seqf<-Seqinfo(seqnames = names(GTF_annotation$exons_txs),seqlengths = sum(width(GTF_annotation$exons_txs)),isCircular = NA,genome = NA)
+    x@seqnames<-Rle(factor(as.character(x@seqnames),levels = seqlevels(seqf)))
+    x@seqinfo<-seqf
+    SaTAnn_results$ORFs_readthroughs<-x
+    
+    x<-SaTAnn_results$ORFs_tx
+    seqf<-Seqinfo(seqnames = names(GTF_annotation$exons_txs),seqlengths = sum(width(GTF_annotation$exons_txs)),isCircular = NA,genome = NA)
+    x@seqnames<-Rle(factor(as.character(x@seqnames),levels = seqlevels(seqf)))
+    x@seqinfo<-seqf
+    
+    x$longest_ORF@seqnames<-Rle(factor(as.character(x$longest_ORF@seqnames),levels = seqlevels(seqf)))
+    x$longest_ORF@seqinfo<-seqf
+    
+    SaTAnn_results$ORFs_tx<-x
+    
     
     save(SaTAnn_results ,file = paste(prefix,"final_SaTAnn_results",sep="_"))
     
@@ -3073,7 +3222,7 @@ load_annotation<-function(path){
 #'
 #' This function processes a gtf file and a twobit file (created using faToTwoBit from ucsc tools: http://hgdownload.soe.ucsc.edu/admin/exe/ ) to create a comprehensive set of genomic regions of interest in genomic and transcriptomic space (e.g. introns, UTRs, start/stop codons).
 #'    In addition, by linking genome sequence and annotation, it extracts additional info, such as gene and transcript biotypes, genetic codes for different organelles, or chromosomes and transcripts lengths.
-#' @keywords Ribo-seQC, SaTAnn
+#' @keywords SaTAnn, RiboseQC
 #' @author Lorenzo Calviello, \email{calviello.l.bio@@gmail.com}
 #' @param annotation_directory The target directory which will contain the output files
 #' @param twobit_file Full path to the genome file in twobit format
@@ -3125,7 +3274,7 @@ prepare_annotation_files<-function(annotation_directory,twobit_file,gtf_file,sci
     DEFAULT_CIRC_SEQS <- unique(c("chrM","MT","MtDNA","mit","Mito","mitochondrion",
                                   "dmel_mitochondrion_genome","Pltd","ChrC","Pt","chloroplast",
                                   "Chloro","2micron","2-micron","2uM",
-                                  "Mt", "NC_001879.2", "NC_006581.1","ChrM"))
+                                  "Mt", "NC_001879.2", "NC_006581.1","ChrM","mitochondrion_genome"))
     #adjust variable names (some chars not permitted)
     annotation_name<-gsub(annotation_name,pattern = "_",replacement = "")
     annotation_name<-gsub(annotation_name,pattern = "-",replacement = "")
@@ -3180,6 +3329,9 @@ prepare_annotation_files<-function(annotation_directory,twobit_file,gtf_file,sci
         
         seed_dest<-paste(annotation_directory,"/",basename(twobit_file),"_",scientific_name,"_seed",sep = "")
         
+        if(length(circseed)==0){
+            writeLines(text = seed_text,con = seed_dest)
+        }
         if(length(circseed)==1){
             seed_text<-paste(seed_text,"\n",
                              "circ_seqs: \"",circseed,"\"",sep="")
@@ -3395,7 +3547,7 @@ prepare_annotation_files<-function(annotation_directory,twobit_file,gtf_file,sci
         #stop codon is the 1st nt, e.g. U of the UAA
         #To-do: update with regards to different organelles, and different annotations
         sto_cc<-shift(sto_cc,-2)
-        if(is.na(stop_inannot)){sto_cc<-shift(sto_cc,3)}
+        if(is.na(stop_inannot)){sto_cc<-resize(trim(shift(sto_cc,3)),width = 1,fix = "end")}
         
         sto_cc<-unlist(pmapFromTranscripts(sto_cc,exons_tx[seqnames(sto_cc)],ignore.strand=F))
         sto_cc<-sto_cc[sto_cc$hit]
@@ -3486,6 +3638,17 @@ prepare_annotation_files<-function(annotation_directory,twobit_file,gtf_file,sci
         GTF_annotation<-list(transcripts_db,txs_gene,ifs,unq_stst,cds_tx,intron_names_tx,cds_gen,exons_tx,nsns,unq_intr,genes,threeutrs,fiveutrs,ncisof,ncrnas,introns,intergenicRegions,trann,cds_txscoords,translations,pkgnm,stop_inannot)
         names(GTF_annotation)<-c("txs","txs_gene","seqinfo","start_stop_codons","cds_txs","introns_txs","cds_genes","exons_txs","exons_bins","junctions","genes","threeutrs","fiveutrs","ncIsof","ncRNAs","introns","intergenicRegions","trann","cds_txs_coords","genetic_codes","genome_package","stop_in_gtf")
         
+        txs_all<-unique(GTF_annotation$trann$transcript_id)
+        txs_exss<-unique(names(GTF_annotation$exons_txs))
+        
+        txs_notok<-txs_all[!txs_all%in%txs_exss]
+        if(length(txs_notok)>0){
+            set.seed(666)
+            cat(paste("Warning: ",length(txs_notok)," txs with incorrect/unspecified exon boundaries - e.g. trans-splicing events, examples: "
+                      ,paste(txs_notok[sample(1:length(txs_notok),size = min(3,length(txs_notok)),replace = F)],collapse=", ")," - ",date(),"\n",sep = ""))
+        }
+        
+        
         #Save as a RData object
         save(GTF_annotation,file=paste(annotation_directory,"/",basename(gtf_file),"_Rannot",sep=""))
         cat(paste("Rannot object created!   ",date(),"\n",sep = ""))
@@ -3496,15 +3659,18 @@ prepare_annotation_files<-function(annotation_directory,twobit_file,gtf_file,sci
             cat(paste("Exporting annotation tables ... ",date(),"\n",sep = ""))
             for(bed_file in c("fiveutrs","threeutrs","ncIsof","ncRNAs","introns","cds_txs_coords")){
                 bf<-GTF_annotation[[bed_file]]
-                bf_t<-data.frame(chromosome=seqnames(bf),start=start(bf),end=end(bf),name=".",score=width(bf),strand=strand(bf))
-                meccole<-mcols(bf)
-                for(mecc in names(meccole)){
-                    if(is(meccole[,mecc],"CharacterList") | is(meccole[,mecc],"NumericList") | is(meccole[,mecc],"IntegerList")){
-                        meccole[,mecc]<-paste(meccole[,mecc],collapse=";")
+                bf_t<-bf
+                if(length(bf)>0){
+                    bf_t<-data.frame(chromosome=seqnames(bf),start=start(bf),end=end(bf),name=".",score=width(bf),strand=strand(bf))
+                    meccole<-mcols(bf)
+                    for(mecc in names(meccole)){
+                        if(is(meccole[,mecc],"CharacterList") | is(meccole[,mecc],"NumericList") | is(meccole[,mecc],"IntegerList")){
+                            meccole[,mecc]<-paste(meccole[,mecc],collapse=";")
+                        }
                     }
+                    bf_t<-cbind.data.frame(bf_t,meccole)
                 }
-                bf_t<-cbind.data.frame(bf_t,meccole)
-                write.table(bf_t,file = paste(annotation_directory,"/",bed_file,"_similbed.bed",sep=""),sep="\t",quote = FALSE,row.names = FALSE)
+                write.table(bf_t,file = paste(annotation_directory,"/",bed_file,"_similbed.bed",sep=""),sep="\t",quote = FALSE,row.names = FALSE,col.names = F)
                 
             }
             
@@ -3522,7 +3688,7 @@ prepare_annotation_files<-function(annotation_directory,twobit_file,gtf_file,sci
         
     }
     
-    }
+}
 
 
 
@@ -3878,6 +4044,8 @@ prepare_for_SaTAnn<-function(annotation_file,bam_file,path_to_rl_cutoff_file=NA,
     
     mapp<-function(x){
         
+        mcols(x)$MD[which(is.na(mcols(x)$MD))]<-"NO"
+        
         x<-x[seqnames(x)%in%seqnames(GTF_annotation$seqinfo)]
         seqlevels(x)<-seqlevels(GTF_annotation$seqinfo)
         x_I<-x[grep("I",cigar(x))]
@@ -3892,9 +4060,7 @@ prepare_for_SaTAnn<-function(annotation_file,bam_file,path_to_rl_cutoff_file=NA,
             
         }
         
-        
         # softclipping
-        
         
         clipp <- width(cigarRangesAlongQuerySpace(x@cigar, ops="S"))
         clipp[elementNROWS(clipp)==0] <- 0
@@ -4457,7 +4623,7 @@ plot_SaTAnn_results<-function(for_SaTAnn_file,SaTAnn_output_file,annotation_file
     list_SaTAnn_plots[["ORFs_found"]][["pars"]]<-c(14,4)
     
     b<-ggplot(dfiso,aes(x=cat_biot,y=ORFs_tx.ORF_pct_P_sites,fill=cat_biot))
-    b<-b + geom_boxplot()
+    b<-b + geom_violin(scale="width",draw_quantiles=.5,adjust = 1)
     b<-b + theme_bw()
     b<-b + ylab("ORF_pct_P-sites")
     b<-b + xlab("")
@@ -4473,7 +4639,7 @@ plot_SaTAnn_results<-function(for_SaTAnn_file,SaTAnn_output_file,annotation_file
     
     
     c<-ggplot(dfpnpm,aes(x=cat_biot,y=ORFs_tx.ORFs_pM+1,fill=cat_biot))
-    c<-c + geom_boxplot()
+    c<-c + geom_violin(scale="width",draw_quantiles=.5,adjust = 1)
     #c<-c + geom_jitter(aes(x=cat_tx,y=ORFs_tx.ORFs_pM),position = position_jitterdodge(jitter.width = .5), alpha = 0.2)
     c<-c + scale_y_log10(breaks=c(1,11,101,1001),limits=c(1,max(dfpnpm$ORFs_tx.ORFs_pM)*1.1),labels=c(1,11,101,1001)-1)
     #c<-c + geom_text(aes(x=cat_tx, y=ORFs_tx.ORFs_pM, hjust="top",label=ORFs_tx.ORFs_pM),colour="black",position = position_dodge(width = 1),size=5)
@@ -4493,7 +4659,7 @@ plot_SaTAnn_results<-function(for_SaTAnn_file,SaTAnn_output_file,annotation_file
     list_SaTAnn_plots[["ORFs_found_ORFs_pM"]][["pars"]]<-c(14,4)
     
     d<-ggplot(dfwid,aes(x=cat_biot,y=width.ORFs_tx.,fill=cat_biot))
-    d<-d + geom_boxplot()
+    d<-d + geom_violin(scale="width",draw_quantiles=.5,adjust = 1)
     #c<-c + geom_jitter(aes(x=cat_tx,y=ORFs_tx.ORFs_pM),position = position_jitterdodge(jitter.width = .5), alpha = 0.2)
     d<-d + scale_y_log10(breaks=c(10,100,1000,10000),labels=c(10,100,1000,10000),limits=c(min(dfwid$width.ORFs_tx.),max(dfwid$width.ORFs_tx.)*1.1))
     #c<-c + geom_text(aes(x=cat_tx, y=ORFs_tx.ORFs_pM, hjust="top",label=ORFs_tx.ORFs_pM),colour="black",position = position_dodge(width = 1),size=5)
@@ -4590,7 +4756,7 @@ plot_SaTAnn_results<-function(for_SaTAnn_file,SaTAnn_output_file,annotation_file
     #df<-df[df$Freq!="1",]
     
     b<-ggplot(df,aes(x=Freq,y=tpms+1,fill="dark grey"))
-    b<-b + geom_boxplot()
+    b<-b + geom_violin(scale="width",draw_quantiles=.5,adjust = 1)
     b<-b + scale_y_log10(breaks=c(1,11,101,1001),limits=c(1,max(df$tpms+1)*1.1),labels=c(0,10,100,1000))
     #b<-b + geom_text(aes(x=cat_tx, y=value, hjust="top",label=value),colour="black",position = position_dodge(width = 1),size=5)
     b<-b + theme_bw()
@@ -4629,7 +4795,7 @@ plot_SaTAnn_results<-function(for_SaTAnn_file,SaTAnn_output_file,annotation_file
     df$maxiso<-factor(df$maxiso,levels = rev(levels(df$maxiso)))
     
     d<-ggplot(df,aes(x=maxiso,y=tpms_mult+1,fill="dark grey"))
-    d<-d + geom_boxplot()
+    d<-d + geom_violin(scale="width",draw_quantiles=.5,adjust = 1)
     d<-d + scale_y_log10(breaks=c(1,11,101,1001),limits=c(1,max(tpms_mult+1)*1.1),labels=c(0,10,100,1000))
     #b<-b + geom_text(aes(x=cat_tx, y=value, hjust="top",label=value),colour="black",position = position_dodge(width = 1),size=5)
     d<-d + theme_bw()
@@ -4690,7 +4856,7 @@ plot_SaTAnn_results<-function(for_SaTAnn_file,SaTAnn_output_file,annotation_file
     df<-data.frame(tpm=tpms[names(ch_txs_sel)],elementNROWS(ch_txs_sel))
     df$qnt<-qnt
     b<-ggplot(df,aes(x=qnt,y=tpms+1,fill="dark grey"))
-    b<-b + geom_boxplot()
+    b<-b + geom_violin(scale="width",draw_quantiles=.5,adjust = 1)
     b<-b + scale_y_log10(breaks=c(1,11,101,1001,10001),limits=c(1,max(df$tpm+1)*1.1),labels=c(0,10,100,1000,10000))
     #b<-b + geom_text(aes(x=cat_tx, y=value, hjust="top",label=value),colour="black",position = position_dodge(width = 1),size=5)
     b<-b + theme_bw()
@@ -4708,7 +4874,7 @@ plot_SaTAnn_results<-function(for_SaTAnn_file,SaTAnn_output_file,annotation_file
     df<-data.frame(pct_sel=as.numeric(pct_sel),elementNROWS(ch_txs_sel))
     df$qnt<-qnt
     c<-ggplot(df,aes(x=qnt,y=pct_sel,fill="dark grey"))
-    c<-c + geom_boxplot()
+    c<-c + geom_violin(scale="width",draw_quantiles=.5,adjust = 1)
     #b<-b + scale_y_log10(breaks=c(1,11,101,1001,10001),limits=c(1,10001),labels=c(0,10,100,1000,10000))
     #b<-b + geom_text(aes(x=cat_tx, y=value, hjust="top",label=value),colour="black",position = position_dodge(width = 1),size=5)
     c<-c + theme_bw()
